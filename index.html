@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SANATORIUM - The Last Patient</title>
+<style>
+*{box-sizing:border-box;touch-action:none}
+body{margin:0;background:#090d10;color:white;font-family:Arial;overflow:hidden}
+canvas{width:100vw;height:100vh;display:block}
+#hud{position:fixed;top:12px;left:10px;right:10px;display:flex;justify-content:space-between;font-size:13px;font-weight:bold}
+#health{color:#f66}
+#controls{position:fixed;bottom:20px;left:15px;right:15px;display:flex;justify-content:space-between;align-items:end}
+#pad{width:120px;height:120px;border:2px solid #888;border-radius:50%;position:relative;background:#ffffff18}
+#stick{position:absolute;left:35px;top:35px;width:45px;height:45px;border-radius:50%;background:#bbb}
+button{background:#572626;color:white;border:2px solid #aaa;border-radius:50%;width:70px;height:70px;font-weight:bold;font-size:12px}
+#start{position:fixed;inset:0;background:#080b0dee;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+#start h1{letter-spacing:4px;font-size:35px}
+#start button{width:210px;height:55px;border-radius:10px}
+#message{position:fixed;top:45%;width:100%;text-align:center;font-size:22px;font-weight:bold}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+<span id="health">VITA: 100</span>
+<span>PISTOLA: ∞</span>
+<span id="kills">UCCISIONI: 0</span>
+</div>
+<div id="message"></div>
+<div id="controls">
+<div id="pad"><div id="stick"></div></div>
+<div>
+<button id="knife">COLTELLO</button>
+<button id="fire">SPARA</button>
+</div>
+</div>
+<div id="start">
+<h1>SANATORIUM</h1>
+<p>THE LAST PATIENT</p>
+<p>Tre persone. Un sanatorio abbandonato.<br>Nessuna via d'uscita.</p>
+<button id="begin">ENTRA NEL SANATORIO</button>
+</div>
+<script>
+  const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+let W,H,D;
+function resize(){
+ D=Math.min(devicePixelRatio||1,2);
+ W=innerWidth;H=innerHeight;
+ canvas.width=W*D;canvas.height=H*D;
+ ctx.setTransform(D,0,0,D,0,0);
+}
+resize();addEventListener("resize",resize);
+
+const player={x:900,y:1050,hp:100};
+const friends=[
+ {x:850,y:1100,name:"MARCO",color:"#438eb8",hp:100},
+ {x:950,y:1100,name:"SARA",color:"#bd75a0",hp:100}
+];
+let zombies=[],kills=0,started=false,over=false;
+let joy={x:0,y:0},lastShot=0,lastKnife=0;
+const world={w:1800,h:1400};
+
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function move(a,b,s){
+ let d=dist(a,b)||1;
+ a.x+=(b.x-a.x)/d*s;
+ a.y+=(b.y-a.y)/d*s;
+}
+function spawn(){
+ zombies.push({
+ x:Math.random()*1600+100,
+ y:Math.random()*900+100,
+ hp:70,speed:.7
+ });
+}
+for(let i=0;i<8;i++)spawn();
+
+function shoot(){
+ if(!started||over||Date.now()-lastShot<350)return;
+ lastShot=Date.now();
+ let z=zombies.find(z=>dist(player,z)<400);
+ if(z){
+  z.hp-=40;
+  if(z.hp<=0){
+   zombies.splice(zombies.indexOf(z),1);
+   kills++;spawn();
+  }
+ }
+}
+function stab(){
+ if(!started||over||Date.now()-lastKnife<500)return;
+ lastKnife=Date.now();
+ let z=zombies.find(z=>dist(player,z)<65);
+ if(z){
+  zombies.splice(zombies.indexOf(z),1);
+  kills++;spawn();
+ }
+}
+document.getElementById("fire").onclick=shoot;
+document.getElementById("knife").onclick=stab;
+
+const pad=document.getElementById("pad");
+const stick=document.getElementById("stick");
+let touching=false;
+function stickMove(e){
+ let r=pad.getBoundingClientRect();
+ let x=e.clientX-r.left-r.width/2;
+ let y=e.clientY-r.top-r.height/2;
+ let d=Math.hypot(x,y)||1;
+ let k=Math.min(1,42/d);
+ joy.x=x*k/42;joy.y=y*k/42;
+ stick.style.left=38+x*k+"px";
+ stick.style.top=38+y*k+"px";
+}
+pad.onpointerdown=e=>{
+ touching=true;pad.setPointerCapture(e.pointerId);stickMove(e);
+};
+pad.onpointermove=e=>{if(touching)stickMove(e)};
+function stop(){
+ touching=false;joy.x=0;joy.y=0;
+ stick.style.left="35px";stick.style.top="35px";
+}
+pad.onpointerup=stop;
+pad.onpointercancel=stop;
+
+document.getElementById("begin").onclick=()=>{
+ started=true;
+ document.getElementById("start").style.display="none";
+};
+  function update(){
+ if(!started||over)return;
+
+ player.x=Math.max(20,Math.min(world.w-20,player.x+joy.x*3.2));
+ player.y=Math.max(20,Math.min(world.h-20,player.y+joy.y*3.2));
+
+ friends.forEach((f,i)=>{
+  let target={x:player.x+(i===0?-45:45),y:player.y+45};
+  if(dist(f,target)>25)move(f,target,1.7);
+ });
+
+ zombies.forEach(z=>{
+  move(z,player,z.speed);
+  if(dist(z,player)<27)player.hp-=.12;
+  friends.forEach(f=>{
+   if(f.hp>0&&dist(z,f)<27)f.hp-=.08;
+  });
+ });
+
+ if(player.hp<=0){
+  player.hp=0;over=true;
+  document.getElementById("message").textContent="SEI STATO CONTAGIATO";
+ }
+ document.getElementById("health").textContent="VITA: "+Math.ceil(player.hp);
+ document.getElementById("kills").textContent="UCCISIONI: "+kills;
+}
+
+function drawPerson(p,color,name){
+ ctx.fillStyle="#0009";
+ ctx.beginPath();ctx.ellipse(p.x+3,p.y+8,17,8,0,0,7);ctx.fill();
+ ctx.fillStyle=color;
+ ctx.beginPath();ctx.arc(p.x,p.y,16,0,7);ctx.fill();
+ ctx.fillStyle="white";ctx.font="12px Arial";ctx.textAlign="center";
+ ctx.fillText(name,p.x,p.y-24);
+}
+
+function draw(){
+ ctx.fillStyle="#101719";ctx.fillRect(0,0,W,H);
+ let camX=Math.max(0,Math.min(world.w-W,player.x-W/2));
+ let camY=Math.max(0,Math.min(world.h-H,player.y-H/2));
+
+ ctx.save();ctx.translate(-camX,-camY);
+
+ ctx.fillStyle="#252b29";
+ ctx.fillRect(0,0,world.w,world.h);
+
+ ctx.strokeStyle="#414744";ctx.lineWidth=2;
+ for(let x=0;x<world.w;x+=100){
+  ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,world.h);ctx.stroke();
+ }
+ for(let y=0;y<world.h;y+=100){
+  ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(world.w,y);ctx.stroke();
+ }
+
+ // Muri e stanze
+ ctx.fillStyle="#606761";
+ ctx.fillRect(150,150,1500,25);
+ ctx.fillRect(150,150,25,1050);
+ ctx.fillRect(150,1180,1500,25);
+ ctx.fillRect(1625,150,25,1055);
+ ctx.fillRect(550,175,20,400);
+ ctx.fillRect(1050,175,20,400);
+
+ ctx.fillStyle="#8d3333";
+ ctx.font="bold 24px Arial";
+ ctx.fillText("RECEPTION",250,240);
+ ctx.fillText("INFERMERIA",650,240);
+ ctx.fillText("REPARTO MASCHILE",1150,240);
+
+ // Arredi
+ ctx.fillStyle="#424947";
+ ctx.fillRect(250,280,180,65);
+ ctx.fillRect(680,290,180,65);
+ ctx.fillRect(1190,300,280,75);
+ ctx.fillRect(300,800,180,80);
+
+ // Compagni
+ friends.forEach(f=>{
+  if(f.hp>0)drawPerson(f,f.color,f.name);
+ });
+
+ // Zombie
+ zombies.forEach(z=>{
+  ctx.fillStyle="#080b0b";
+  ctx.beginPath();ctx.arc(z.x,z.y+5,20,0,7);ctx.fill();
+  ctx.fillStyle="#71806b";
+  ctx.beginPath();ctx.arc(z.x,z.y,17,0,7);ctx.fill();
+  ctx.fillStyle="#ed3333";
+  ctx.fillRect(z.x-8,z.y-4,5,4);
+  ctx.fillRect(z.x+4,z.y-4,5,4);
+ });
+
+ // Giocatore
+ drawPerson(player,"#c5c5c5","TU");
+
+ ctx.restore();
+
+ // Vignettatura
+ let g=ctx.createRadialGradient(W/2,H/2,40,W/2,H/2,W*.75);
+ g.addColorStop(0,"transparent");
+ g.addColorStop(1,"#000b");
+ ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+}
+
+function loop(){
+ update();
+ draw();
+ requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
